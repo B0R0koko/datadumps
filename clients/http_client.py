@@ -1,5 +1,5 @@
-from chunk import Chunk
-from agents import HeaderManager
+from clients.agents import HeaderManager
+
 from typing import Callable, Coroutine, List, Any, Optional
 
 import asyncio
@@ -7,6 +7,7 @@ import functools
 import aiohttp
 import asyncpg
 import logging
+import time
 
 # import uvloop
 
@@ -19,6 +20,13 @@ logging.basicConfig(
 
 class BadStatusException(Exception):
     pass
+
+
+class Config:
+    def __init__(self, queries, parser, rps):
+        self.queries = queries
+        self.parser = parser
+        self.rps = rps
 
 
 class HttpClient:
@@ -146,10 +154,23 @@ class HttpClient:
         return text
 
 
+# Utitlity for exchange clients like generating intervals
+class HttpClientUtils:
+    @classmethod
+    def generate_intervals(cls, start: int, end: int, step: int) -> List[tuple]:
+        intervals = []
+        n_steps = (end - start) // step + 1
+        for i in range(n_steps):
+            loc_start = start + i * step
+            loc_end = start + (i + 1) * step if i != n_steps else end
+            intervals.append((loc_start, loc_end))
+        return intervals
+
+
 class Scheduler:
     @classmethod
-    def schedule_tasks(cls, coros: List[Coroutine]):
-        async def gather_coros(coros):
-            await asyncio.gather(*coros)
+    def schedule_tasks(cls, tasks: list):
+        async def main(tasks):
+            await asyncio.gather(*tasks)
 
-        asyncio.run(gather_coros(coros))
+        asyncio.run(main(tasks))

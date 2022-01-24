@@ -1,4 +1,4 @@
-import http_client
+from http_client import HttpClient
 
 import base64
 import hmac
@@ -8,7 +8,7 @@ import time
 from typing import List, Any
 
 
-class OkexHttpClient(http_client):
+class OkexHttpClient(HttpClient):
 
     _base_url = "https://www.okex.com"
 

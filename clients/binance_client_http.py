@@ -1,4 +1,4 @@
-from http_client import HttpClient
+from clients.http_client import HttpClient, HttpClientUtils
 
 import aiohttp
 import base64
@@ -21,24 +21,18 @@ class BinanceClientUtils:
         "1hr": 3600,
     }
 
+    # Generate reqs with incrementing interval
     # GET /api/v3/klines?symbol=BTCUSDT&interval=1m&startTime=1499040000000&closeTime=1499644799999&limit=1000
     @classmethod
-    def get_kline_reqs(
-        cls, symbol: str, startTime: int, endTime: int, interval: str, n_klines_pr=1000
-    ):
-        kline_reqs = []
-        master_interval = endTime - startTime
-        small_interval = n_klines_pr * cls._tick_to_sec_map[interval]
-        n_reqs = master_interval // small_interval + 1
-        for i in range(n_reqs):
-            loc_start = startTime + i * small_interval
-            loc_end = startTime + (i + 1) * small_interval if i != n_reqs else endTime
-            req = (
-                f"GET /api/v3/klines?symbol={symbol}&interval={interval}"
-                f"&startTime={loc_start}000&endTime={loc_end}000&limit={n_klines_pr}"
-            )  # timestamp in ms
-            kline_reqs.append(req)
-        return kline_reqs
+    def get_kline_reqs(cls, symbol, start, end, step, limit):
+        req = "GET /api/v3/klines?symbol={}&interval={}&startTime={}000&endTime={}000&limit={}"
+        step_sec = cls._tick_to_sec_map[step] * limit
+        intervals = HttpClientUtils.generate_intervals(start, end, step_sec)
+        reqs = [
+            req.format(symbol, step, interval[0], interval[1], limit)
+            for interval in intervals
+        ]
+        return reqs
 
     @classmethod
     def kline_parser(cls, response: aiohttp.ClientResponse) -> List[List[Any]]:
@@ -54,8 +48,15 @@ class BinanceHttpClient(HttpClient):
         self, api_key: str, api_secret: str, api_passphrase: str, database: List[Any]
     ):
         super().__init__(api_key, api_secret, api_passphrase, database)
+        self.utility_module = BinanceClientUtils
 
     def _get_headers(
         self, method, endpoint
     ):  # Using Market Data Endpoints doesnt require signitures
         return {}
+
+    def parse_klines(self, queries, rps, symbol, start, end, step, limit=1000):
+        reqs = self.utility_module.get_kline_reqs(symbol, start, end, step, limit)
+        return self.parse_reqs(
+            reqs, queries, self.utility_module.kline_parser, rps
+        )  # return ready to use coroutine

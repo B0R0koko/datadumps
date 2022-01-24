@@ -1,4 +1,4 @@
-from http_client import HttpClient
+from clients.http_client import HttpClient, HttpClientUtils
 
 import base64
 import hmac
@@ -21,21 +21,20 @@ class KucoinClientUtils:
         "60min": 3600,
     }
 
+    # Generate requests with changing time intervals for parsing klines
     # --Example-- type=1min&symbol=BTC-USDT&startAt=1566703297&endAt=1566789757
     @classmethod
     def get_kline_reqs(
-        cls, symbol: str, startAt: int, endAt: int, tick: str, n_klines_pr=1500
+        cls, symbol: str, start: int, end: int, step: str, limit=1500
     ) -> list:
-        kline_reqs = []
-        master_interval = endAt - startAt
-        small_interval = n_klines_pr * cls._tick_to_sec_map[tick]
-        n_reqs = master_interval // small_interval + 1
-        for i in range(n_reqs):
-            loc_start = startAt + i * small_interval
-            loc_end = startAt + (i + 1) * small_interval
-            req = f"GET /api/v1/market/candles?type={tick}&symbol={symbol}&startAt={loc_start}&endAt={loc_end}"
-            kline_reqs.append(req)
-        return kline_reqs
+        reqs = []
+        req = "GET /api/v1/market/candles?type={}&symbol={}&startAt={}&endAt={}"
+        step_sec = cls._tick_to_sec_map[step] * limit
+        intervals = HttpClientUtils.generate_intervals(start, end, step_sec)
+        reqs = [
+            req.format(step, symbol, interval[0], interval[1]) for interval in intervals
+        ]
+        return reqs
 
     @classmethod
     def kline_parser(cls, response: aiohttp.ClientResponse) -> List[List[Any]]:
@@ -58,6 +57,7 @@ class KucoinHttpClient(HttpClient):
         self, api_key: str, api_secret: str, api_passphrase: str, database: List[Any]
     ):
         super().__init__(api_key, api_secret, api_passphrase, database)
+        self.utility_module = KucoinClientUtils
 
     def _get_headers(self, method: str, endpoint: str) -> dict:
         current_ts = str(int(time.time()) * 1000)
@@ -86,3 +86,9 @@ class KucoinHttpClient(HttpClient):
             "KC-API-KEY-VERSION": "2",
         }
         return header
+
+    def parse_klines(self, queries, rps, symbol, start, end, step, limit=1000):
+        reqs = self.utility_module.get_kline_reqs(symbol, start, end, step, limit)
+        return self.parse_reqs(
+            reqs, queries, self.utility_module.kline_parser, rps
+        )  # return ready to use coroutine
